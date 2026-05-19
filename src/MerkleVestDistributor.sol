@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Tokenomics} from "./Tokenomics.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import { Tokenomics } from "./Tokenomics.sol";
 
 /// @title MerkleVestDistributor
 /// @notice Distributes a launched token to contest participants by role
@@ -14,7 +14,7 @@ import {Tokenomics} from "./Tokenomics.sol";
 ///
 /// @dev Design hardened from industry research (plan §4.5, §13 item 6):
 ///  - Leaf = keccak256(bytes.concat(keccak256(abi.encode(index,account,amount))))
-///    built off-chain with @openzeppelin/merkle-tree StandardMerkleTree; verified
+///    built off-chain with the OpenZeppelin merkle-tree StandardMerkleTree; verified
 ///    here with OZ MerkleProof (sorted-pair). Double-hash defeats the
 ///    second-preimage attack of the old single-hash/packed Jito/Uniswap shape.
 ///  - PARTIAL repeated claims → per-leaf `claimed` mapping (a bitmap is
@@ -29,22 +29,24 @@ contract MerkleVestDistributor is ReentrancyGuard {
 
     struct Campaign {
         bytes32 merkleRoot;
-        uint16  unlockBps;  // immediate unlock at `start`, <= 10_000
-        uint64  start;      // vesting start
-        uint64  end;        // vesting end (linear between start..end)
-        uint64  cliff;      // optional; 0 = none. Within [start,end].
+        uint16 unlockBps; // immediate unlock at `start`, <= 10_000
+        uint64 start; // vesting start
+        uint64 end; // vesting end (linear between start..end)
+        uint64 cliff; // optional; 0 = none. Within [start,end].
     }
 
-    IERC20  public immutable token;
-    address public immutable treasury;        // Safe multisig; clawback sink
-    uint64  public immutable campaignExpiry;  // clawback allowed only after this
+    IERC20 public immutable token;
+    address public immutable treasury; // Safe multisig; clawback sink
+    uint64 public immutable campaignExpiry; // clawback allowed only after this
 
     /// @dev role => Campaign (0=creator, 1=backers, 2=voters per Tokenomics).
     mapping(uint8 => Campaign) public campaigns;
     /// @dev role => leaf index => cumulative amount already transferred.
     mapping(uint8 => mapping(uint256 => uint256)) public claimed;
 
-    event Claimed(uint8 indexed role, uint256 indexed index, address indexed account, uint256 amount);
+    event Claimed(
+        uint8 indexed role, uint256 indexed index, address indexed account, uint256 amount
+    );
     event ClawedBack(uint8 indexed role, uint256 amount);
 
     error InvalidProof();
@@ -52,6 +54,7 @@ contract MerkleVestDistributor is ReentrancyGuard {
     error InvalidCampaign();
     error NotExpired();
     error ZeroAmount();
+    error NotTreasury();
 
     /// @param expiry Clawback gate; must be comfortably after the latest `end`.
     constructor(IERC20 token_, address treasury_, Campaign[3] memory init, uint64 expiry) {
@@ -121,7 +124,7 @@ contract MerkleVestDistributor is ReentrancyGuard {
     ///         expiry (well past the latest vesting end). Never touches funds
     ///         already owed/claimed.
     function clawback(uint8 role, uint256 sweepAmount) external {
-        if (msg.sender != treasury) revert InvalidCampaign();
+        if (msg.sender != treasury) revert NotTreasury();
         if (block.timestamp < campaignExpiry) revert NotExpired();
         token.safeTransfer(treasury, sweepAmount);
         emit ClawedBack(role, sweepAmount);

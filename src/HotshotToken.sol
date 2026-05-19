@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {Tokenomics} from "./Tokenomics.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { Tokenomics } from "./Tokenomics.sol";
 
 /// @title HotshotToken
 /// @notice Per-contest winner token. Fixed 1B / 18-dec supply, minted ONCE at

@@ -1,45 +1,62 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import { INonfungiblePositionManager } from "./interfaces/IUniswapV3.sol";
+
 /// @title LpLocker
 /// @notice Holds the treasury's 50% Uniswap V3 LP position FOREVER. Principal
 ///         is permanently locked: there is intentionally NO decreaseLiquidity,
-///         NO NFT transfer, NO owner that can move the position. ONLY `collect()`
-///         routes accrued swap fees to the FeeTreasury (plan §4.4 graduation,
-///         §13 item b — Clanker/Doppler "fees-only withdrawable" pattern).
+///         NO NFT transfer-out, NO owner. ONLY `collectFees()` routes accrued
+///         swap fees to the FeeTreasury (plan §4.4 / §13 b — Clanker/Doppler
+///         "fees-only withdrawable" pattern).
 ///
-/// @dev Immutable & non-upgradeable by construction. The other 50% of LP is
-///      burned (NFT → address(0)) by the BondingCurve at graduation and is not
-///      represented here. SKELETON — Uniswap V3 NonfungiblePositionManager
-///      wiring is `// TODO(impl)`.
-///
-///      AUDIT FOCUS: prove no code path can reduce/transfer principal; the
-///      ONLY external mutation is fee collection to `treasury`.
+/// @dev Immutable & non-upgradeable. The other 50% of LP is burned by the
+///      BondingCurve at graduation and is not represented here.
+///      AUDIT FOCUS: prove NO path can reduce/transfer principal; the only
+///      external mutation is fee collection to `treasury`.
 contract LpLocker {
-    /// @notice Uniswap V3 NonfungiblePositionManager.
-    address public immutable positionManager;
-    /// @notice The locked position NFT id (the treasury 50% only).
+    INonfungiblePositionManager public immutable positionManager;
     uint256 public immutable tokenId;
-    /// @notice Sole fee recipient — the FeeTreasury (Safe-multisig owned).
-    address public immutable treasury;
+    address public immutable treasury; // sole, hardcoded fee recipient
 
     event FeesCollected(uint256 amount0, uint256 amount1);
 
+    error UnexpectedToken();
+
     constructor(address positionManager_, uint256 tokenId_, address treasury_) {
-        positionManager = positionManager_;
+        positionManager = INonfungiblePositionManager(positionManager_);
         tokenId = tokenId_;
         treasury = treasury_;
     }
 
-    /// @notice Collect accrued LP fees to the treasury. Callable by anyone
-    ///         (recipient is hardcoded to `treasury`, so this is safe to leave
-    ///         permissionless). Does NOT and CANNOT touch principal liquidity.
-    function collectFees() external returns (uint256 amount0, uint256 amount1) {
-        // TODO(impl): INonfungiblePositionManager.collect({
-        //   tokenId, recipient: treasury, amount0Max: max, amount1Max: max });
-        revert("TODO(impl): collect");
+    /// @notice Accept exactly the configured position NFT from the position
+    ///         manager; reject anything else so no stray NFT can be parked here.
+    function onERC721Received(address, address, uint256 id, bytes calldata)
+        external
+        view
+        returns (bytes4)
+    {
+        if (msg.sender != address(positionManager) || id != tokenId) {
+            revert UnexpectedToken();
+        }
+        return this.onERC721Received.selector;
     }
 
-    // NOTE: deliberately NO decreaseLiquidity / NO onERC721Received that
-    // forwards / NO sweep / NO owner. Principal is unreachable by design.
+    /// @notice Collect accrued LP fees to the treasury. Permissionless: the
+    ///         recipient is hardcoded to `treasury`, and this CANNOT touch
+    ///         principal liquidity (no decreaseLiquidity is ever called).
+    function collectFees() external returns (uint256 amount0, uint256 amount1) {
+        (amount0, amount1) = positionManager.collect(
+            INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: treasury,
+                amount0Max: type(uint128).max,
+                amount1Max: type(uint128).max
+            })
+        );
+        emit FeesCollected(amount0, amount1);
+    }
+
+    // NOTE: deliberately NO decreaseLiquidity / NO sweep / NO owner / NO way to
+    // transfer `tokenId` out. Principal is unreachable by design.
 }

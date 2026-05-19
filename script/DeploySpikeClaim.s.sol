@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Script, console} from "forge-std/Script.sol";
-import {SpikeClaim} from "../src/SpikeClaim.sol";
+import { Script, console } from "forge-std/Script.sol";
+import { SpikeClaim } from "../src/SpikeClaim.sol";
 
 /// @notice Deploy SpikeClaim to World Chain Sepolia (4801).
 ///   forge script script/DeploySpikeClaim.s.sol \
