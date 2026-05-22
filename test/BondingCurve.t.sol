@@ -35,7 +35,9 @@ contract BondingCurveTest is Test {
             INonfungiblePositionManager(address(mockNpm)),
             CURVE_SUPPLY,
             VQR,
-            THRESHOLD
+            THRESHOLD,
+            address(0), // no guardian — these tests focus on curve math
+            0 // no per-tx cap
         );
 
         tkn.mint(address(curve), CURVE_SUPPLY); // factory funds the curve

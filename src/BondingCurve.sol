@@ -8,6 +8,7 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Tokenomics } from "./Tokenomics.sol";
 import { INonfungiblePositionManager, IUniswapV3Factory } from "./interfaces/IUniswapV3.sol";
 import { LpLocker } from "./LpLocker.sol";
+import { IGuardian } from "./Guardian.sol";
 
 /// @title BondingCurve
 /// @notice WLD-quoted constant-product curve with a VIRTUAL quote reserve
@@ -38,6 +39,18 @@ contract BondingCurve is ReentrancyGuard {
     uint256 public immutable virtualQuoteReserve; // R_q0
     uint256 public immutable k; // R_q0 * curveTokenSupply (invariant constant)
 
+    /// @notice Optional Guardian (Workstream E2). When set, buy/sell revert
+    ///         while `guardian.isPaused()` returns true. address(0) means
+    ///         no pause hook (acceptable for testnet / pre-mainnet builds
+    ///         where the Guardian hasn't been deployed yet).
+    IGuardian public immutable guardian;
+
+    /// @notice Per-tx WLD cap on `buy()`. Set to a low value (e.g. 100 WLD)
+    ///         for the first few mainnet launches to prevent a flash-loan
+    ///         single-tx graduation; 0 means unlimited. Immutable per
+    ///         launch — adjusting requires a new launch.
+    uint256 public immutable maxBuyPerTx;
+
     uint256 public graduationThresholdWLD;
     uint256 public tokenReserve; // curve token side (real, decreasing on buys)
     uint256 public raisedWLD; // net WLD accumulated on the curve
@@ -63,6 +76,12 @@ contract BondingCurve is ReentrancyGuard {
     ///         PoolIfNecessary` returns the attacker's pool, and the launch
     ///         seeds liquidity at the wrong price.
     error PoolPreExists();
+    /// @notice Reverted when guardian.isPaused() is true. Suite-wide pause
+    ///         from the Workstream E2 risk-mitigation lever.
+    error Paused();
+    /// @notice Reverted when buy() input exceeds the per-tx cap. Prevents
+    ///         flash-loan single-tx graduation on the first launches.
+    error MaxBuyExceeded();
 
     constructor(
         IERC20 token_,
@@ -71,7 +90,9 @@ contract BondingCurve is ReentrancyGuard {
         INonfungiblePositionManager npm_,
         uint256 curveTokenSupply, // 650M * 1e18
         uint256 virtualQuoteReserve_,
-        uint256 thresholdWLD
+        uint256 thresholdWLD,
+        address guardian_, // address(0) for no pause hook
+        uint256 maxBuyPerTx_ // 0 for unlimited
     ) {
         token = token_;
         quote = quote_;
@@ -84,6 +105,14 @@ contract BondingCurve is ReentrancyGuard {
         tokenReserve = curveTokenSupply;
         k = virtualQuoteReserve_ * curveTokenSupply;
         graduationThresholdWLD = thresholdWLD;
+        guardian = IGuardian(guardian_);
+        maxBuyPerTx = maxBuyPerTx_;
+    }
+
+    /// @dev Suite-wide pause check. Cheap if guardian is unset (address(0)).
+    modifier whenNotPaused() {
+        if (address(guardian) != address(0) && guardian.isPaused()) revert Paused();
+        _;
     }
 
     // ───────────────────────── pricing ─────────────────────────
@@ -130,10 +159,12 @@ contract BondingCurve is ReentrancyGuard {
     function buy(uint256 quoteIn, uint256 minTokensOut)
         external
         nonReentrant
+        whenNotPaused
         returns (uint256 tokensOut)
     {
         if (graduated) revert AlreadyGraduated();
         if (quoteIn == 0) revert ZeroAmount();
+        if (maxBuyPerTx != 0 && quoteIn > maxBuyPerTx) revert MaxBuyExceeded();
 
         uint16 feeBps = currentFeeBps();
         uint256 fee = (quoteIn * feeBps) / Tokenomics.BPS_DENOMINATOR;
@@ -158,6 +189,7 @@ contract BondingCurve is ReentrancyGuard {
     function sell(uint256 tokensIn, uint256 minQuoteOut)
         external
         nonReentrant
+        whenNotPaused
         returns (uint256 quoteOut)
     {
         if (graduated) revert AlreadyGraduated();

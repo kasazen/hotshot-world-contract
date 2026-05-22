@@ -52,7 +52,9 @@ contract AntiHijackTest is Test {
             INonfungiblePositionManager(address(mockNpm)),
             CURVE_SUPPLY,
             VQR,
-            THRESHOLD
+            THRESHOLD,
+            address(0), // no guardian — anti-hijack tests focus on pool-init defense
+            0
         );
         tkn.mint(address(curve), CURVE_SUPPLY);
         wld.mint(buyer, 1_000_000 * E18);
@@ -131,7 +133,8 @@ contract Create2SaltEntropyTest is Test {
             IERC20(address(wld)),
             address(treasury),
             INonfungiblePositionManager(address(npm)),
-            launcherA
+            launcherA,
+            address(0) // no Guardian — these tests focus on CREATE2 salt entropy
         );
     }
 
@@ -146,6 +149,9 @@ contract Create2SaltEntropyTest is Test {
         p.virtualQuoteReserve = 30_000 * UNIT;
         p.graduationThresholdWLD = 50_000 * UNIT;
         p.campaignExpiry = uint64(block.timestamp + 365 days);
+        p.maxBuyPerTx = 0;
+        p.metadataURI = "";
+        p.voteTallyHash = bytes32(0);
         uint64 s = uint64(block.timestamp + 60);
         p.campaigns[0] = MerkleVestDistributor.Campaign(
             bytes32(uint256(1)),

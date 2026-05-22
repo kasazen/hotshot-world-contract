@@ -56,7 +56,8 @@ contract DistributorInvariant is Test {
         cs[1] = cs[0];
         cs[2] = cs[0];
 
-        dist = new MerkleVestDistributor(IERC20(address(token)), makeAddr("t"), cs, s + 999 days);
+        dist =
+            new MerkleVestDistributor(IERC20(address(token)), makeAddr("t"), cs, s + 999 days, address(0));
         token.mint(address(dist), 1_000_000_000 ether);
 
         handler = new Handler(dist, token, alice, amount, leaves);

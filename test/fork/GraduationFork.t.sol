@@ -46,7 +46,7 @@ contract GraduationForkTest is Test {
             vm.envOr("WORLDCHAIN_MAINNET_RPC", string("https://worldchain-mainnet.g.alchemy.com/public"))
         );
 
-        tkn = new HotshotToken("Shot", "SHOT", 1, address(this));
+        tkn = new HotshotToken("Shot", "SHOT", 1, "ipfs://test", address(this));
         curve = new BondingCurve(
             IERC20(address(tkn)),
             IERC20(WLD),
@@ -54,7 +54,9 @@ contract GraduationForkTest is Test {
             INonfungiblePositionManager(NPM),
             CURVE_SUPPLY,
             30_000 * E18, // virtual quote reserve
-            5 * E18 // low threshold so a small buy graduates
+            5 * E18, // low threshold so a small buy graduates
+            address(0), // no Guardian in the fork test
+            0
         );
         tkn.transfer(address(curve), CURVE_SUPPLY);
 

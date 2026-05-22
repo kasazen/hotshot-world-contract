@@ -25,6 +25,10 @@ contract HotshotLaunchpadFactory {
     address public immutable treasury; // FeeTreasury (Safe-owned)
     INonfungiblePositionManager public immutable npm;
     address public launcher; // low-privilege automation key (KMS)
+    /// @notice Suite-wide Guardian (Workstream E2). Wired into every
+    ///         BondingCurve + Distributor this factory deploys. address(0)
+    ///         is acceptable for testnet — disables the pause hook.
+    address public immutable guardian;
 
     struct LaunchParams {
         uint256 contestId;
@@ -34,9 +38,31 @@ contract HotshotLaunchpadFactory {
         uint256 graduationThresholdWLD; // governable (Tokenomics default)
         MerkleVestDistributor.Campaign[3] campaigns; // creator/backers/voters
         uint64 campaignExpiry; // distributor clawback gate
+        /// @notice Per-tx WLD cap on the curve's buy(). 0 = unlimited.
+        ///         Workstream E1: set low (e.g. 100 WLD) for the first
+        ///         5 launches to cap flash-loan single-tx graduation.
+        uint256 maxBuyPerTx;
+        /// @notice HTTPS or ipfs:// URL of the launch metadata JSON.
+        ///         Workstream B: bound to the token immutably.
+        string metadataURI;
+        /// @notice keccak256 of sorted EIP-712 payload hashes of all
+        ///         signed votes for this contest. Workstream G — binds
+        ///         the on-chain launch to the off-chain vote set so
+        ///         anyone can verify roots were derived honestly.
+        bytes32 voteTallyHash;
     }
 
-    event Launched(uint256 indexed contestId, address token, address curve, address distributor);
+    /// @notice Rich launch event. metadataURI + voteTallyHash give
+    ///         block-explorers + indexers everything needed to render
+    ///         and verify a launch without re-deriving off-chain state.
+    event Launched(
+        uint256 indexed contestId,
+        address token,
+        address curve,
+        address distributor,
+        string metadataURI,
+        bytes32 voteTallyHash
+    );
 
     error NotLauncher();
     error NotTreasury();
@@ -46,12 +72,14 @@ contract HotshotLaunchpadFactory {
         IERC20 quote_,
         address treasury_,
         INonfungiblePositionManager npm_,
-        address launcher_
+        address launcher_,
+        address guardian_ // 0 = no suite-wide pause hook
     ) {
         quote = quote_;
         treasury = treasury_;
         npm = npm_;
         launcher = launcher_;
+        guardian = guardian_;
     }
 
     function launch(LaunchParams calldata p)
@@ -70,19 +98,21 @@ contract HotshotLaunchpadFactory {
         uint256 curveAmt = Tokenomics.CURVE_ALLOCATION * unit;
         uint256 rewardsAmt = Tokenomics.REWARDS_POOL_TOTAL * unit;
 
-        // 1. token — mints full fixed supply to this factory for splitting
+        // 1. token — mints full fixed supply to this factory for splitting.
+        //    metadataURI is set immutably so the off-chain photo + vote
+        //    commitments are forever bound to the token contract.
         HotshotToken t = new HotshotToken{ salt: salt }(
-            p.name, p.symbol, p.contestId, address(this)
+            p.name, p.symbol, p.contestId, p.metadataURI, address(this)
         );
         token = address(t);
 
-        // 2. distributor (3 roles, double-hashed leaves, pay-to-leaf)
+        // 2. distributor (3 roles, double-hashed leaves, pay-to-leaf, Guardian-gated)
         MerkleVestDistributor d = new MerkleVestDistributor{ salt: salt }(
-            IERC20(token), treasury, p.campaigns, p.campaignExpiry
+            IERC20(token), treasury, p.campaigns, p.campaignExpiry, guardian
         );
         distributor = address(d);
 
-        // 3. curve (virtual-reserve, WLD-quoted, atomic graduation)
+        // 3. curve (virtual-reserve, WLD-quoted, atomic graduation, Guardian-gated, capped buy)
         BondingCurve c = new BondingCurve{ salt: salt }(
             IERC20(token),
             quote,
@@ -90,7 +120,9 @@ contract HotshotLaunchpadFactory {
             npm,
             curveAmt,
             p.virtualQuoteReserve,
-            p.graduationThresholdWLD
+            p.graduationThresholdWLD,
+            guardian,
+            p.maxBuyPerTx
         );
         curve = address(c);
 
@@ -99,7 +131,7 @@ contract HotshotLaunchpadFactory {
         IERC20(token).transfer(distributor, rewardsAmt);
         if (IERC20(token).balanceOf(address(this)) != 0) revert SplitMismatch();
 
-        emit Launched(p.contestId, token, curve, distributor);
+        emit Launched(p.contestId, token, curve, distributor, p.metadataURI, p.voteTallyHash);
     }
 
     /// @notice Safe-multisig (treasury) may rotate the automation key.

@@ -68,7 +68,7 @@ contract MerkleVestDistributorTest is Test {
 
         vLeaves.push(MerkleLib.leaf(0, makeAddr("v0"), vAmt));
 
-        dist = new MerkleVestDistributor(IERC20(address(token)), treasury, _campaigns(), expiry);
+        dist = new MerkleVestDistributor(IERC20(address(token)), treasury, _campaigns(), expiry, address(0));
 
         // factory funds the distributor with the rewards pool
         token.mint(address(dist), Tokenomics.REWARDS_POOL_TOTAL * E18 * 2);
@@ -195,21 +195,21 @@ contract MerkleVestDistributorTest is Test {
         MerkleVestDistributor.Campaign[3] memory cs = _campaigns();
         cs[0].merkleRoot = bytes32(0);
         vm.expectRevert(MerkleVestDistributor.InvalidCampaign.selector);
-        new MerkleVestDistributor(IERC20(address(token)), treasury, cs, expiry);
+        new MerkleVestDistributor(IERC20(address(token)), treasury, cs, expiry, address(0));
     }
 
     function test_ctorRejectsBadBps() public {
         MerkleVestDistributor.Campaign[3] memory cs = _campaigns();
         cs[1].unlockBps = 10_001;
         vm.expectRevert(MerkleVestDistributor.InvalidCampaign.selector);
-        new MerkleVestDistributor(IERC20(address(token)), treasury, cs, expiry);
+        new MerkleVestDistributor(IERC20(address(token)), treasury, cs, expiry, address(0));
     }
 
     function test_ctorRejectsEndBeforeStart() public {
         MerkleVestDistributor.Campaign[3] memory cs = _campaigns();
         cs[2].end = cs[2].start;
         vm.expectRevert(MerkleVestDistributor.InvalidCampaign.selector);
-        new MerkleVestDistributor(IERC20(address(token)), treasury, cs, expiry);
+        new MerkleVestDistributor(IERC20(address(token)), treasury, cs, expiry, address(0));
     }
 
     // ---- fuzz: unlocked is monotonic and bounded by total ----

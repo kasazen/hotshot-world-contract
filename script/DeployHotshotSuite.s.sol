@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Script, console} from "forge-std/Script.sol";
 import {FeeTreasury} from "../src/FeeTreasury.sol";
 import {HotshotLaunchpadFactory} from "../src/HotshotLaunchpadFactory.sol";
+import {Guardian} from "../src/Guardian.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {INonfungiblePositionManager} from "../src/interfaces/IUniswapV3.sol";
 
@@ -43,17 +44,23 @@ contract DeployHotshotSuite is Script {
         vm.startBroadcast();
 
         FeeTreasury treasury = new FeeTreasury(safe);
+        // Workstream E2: deploy the Guardian owned by the same Safe multisig
+        // that owns the treasury. Wired into every per-launch BondingCurve
+        // and Distributor for emergency-pause coverage.
+        Guardian guardian = new Guardian(safe);
         HotshotLaunchpadFactory factory = new HotshotLaunchpadFactory(
             IERC20(quote),
             address(treasury),
             INonfungiblePositionManager(npm),
-            launcher
+            launcher,
+            address(guardian)
         );
 
         vm.stopBroadcast();
 
         console.log("=== HOTSHOT World suite ===");
         console.log("FeeTreasury:           ", address(treasury));
+        console.log("Guardian:              ", address(guardian));
         console.log("HotshotLaunchpadFactory:", address(factory));
         console.log("  quote (WLD):         ", quote);
         console.log("  positionManager:     ", npm);
@@ -63,6 +70,7 @@ contract DeployHotshotSuite is Script {
         console.log("NEXT STEPS:");
         console.log("  1. Set LAUNCHPAD_FACTORY_ADDRESS env on Vercel to the factory address.");
         console.log("  2. Set TREASURY_SAFE_ADDRESS to the treasury address.");
-        console.log("  3. Whitelist MerkleVestDistributor (per-launch) + WLD in the Developer Portal.");
+        console.log("  3. Set GUARDIAN_ADDRESS on Vercel + in the OPS-RUNBOOK incident response.");
+        console.log("  4. Whitelist MerkleVestDistributor (per-launch) + WLD in the Developer Portal.");
     }
 }

@@ -32,7 +32,8 @@ contract LaunchpadTest is Test {
             IERC20(address(wld)),
             address(treasury),
             INonfungiblePositionManager(address(npm)),
-            launcher
+            launcher,
+            address(0) // no Guardian for the base Launchpad tests
         );
     }
 
@@ -47,6 +48,9 @@ contract LaunchpadTest is Test {
         p.virtualQuoteReserve = 30_000 * UNIT;
         p.graduationThresholdWLD = 50_000 * UNIT;
         p.campaignExpiry = uint64(block.timestamp + 365 days);
+        p.maxBuyPerTx = 0;
+        p.metadataURI = "ipfs://test-metadata";
+        p.voteTallyHash = keccak256("test-tally");
         uint64 s = uint64(block.timestamp + 60);
         p.campaigns[0] = MerkleVestDistributor.Campaign(
             bytes32(uint256(1)),

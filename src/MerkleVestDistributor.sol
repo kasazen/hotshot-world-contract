@@ -6,6 +6,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Tokenomics } from "./Tokenomics.sol";
+import { IGuardian } from "./Guardian.sol";
 
 /// @title MerkleVestDistributor
 /// @notice Distributes a launched token to contest participants by role
@@ -38,6 +39,10 @@ contract MerkleVestDistributor is ReentrancyGuard {
     IERC20 public immutable token;
     address public immutable treasury; // Safe multisig; clawback sink
     uint64 public immutable campaignExpiry; // clawback allowed only after this
+    /// @notice Optional Guardian (Workstream E2). When set, claim() reverts
+    ///         while `guardian.isPaused()` returns true. address(0) means
+    ///         no pause hook.
+    IGuardian public immutable guardian;
 
     /// @dev role => Campaign (0=creator, 1=backers, 2=voters per Tokenomics).
     mapping(uint8 => Campaign) public campaigns;
@@ -55,12 +60,23 @@ contract MerkleVestDistributor is ReentrancyGuard {
     error NotExpired();
     error ZeroAmount();
     error NotTreasury();
+    /// @notice Reverted when guardian.isPaused() is true. Suite-wide pause
+    ///         from the Workstream E2 risk-mitigation lever.
+    error Paused();
 
     /// @param expiry Clawback gate; must be comfortably after the latest `end`.
-    constructor(IERC20 token_, address treasury_, Campaign[3] memory init, uint64 expiry) {
+    /// @param guardian_ Optional pause hook; address(0) for none.
+    constructor(
+        IERC20 token_,
+        address treasury_,
+        Campaign[3] memory init,
+        uint64 expiry,
+        address guardian_
+    ) {
         token = token_;
         treasury = treasury_;
         campaignExpiry = expiry;
+        guardian = IGuardian(guardian_);
         for (uint8 r = 0; r < 3; ++r) {
             Campaign memory c = init[r];
             if (
@@ -83,6 +99,7 @@ contract MerkleVestDistributor is ReentrancyGuard {
         uint256 amount,
         bytes32[] calldata proof
     ) external nonReentrant {
+        if (address(guardian) != address(0) && guardian.isPaused()) revert Paused();
         if (amount == 0) revert ZeroAmount();
         Campaign memory c = campaigns[role];
 
