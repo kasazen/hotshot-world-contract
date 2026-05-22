@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { HotshotToken } from "./HotshotToken.sol";
 import { BondingCurve } from "./BondingCurve.sol";
 import { MerkleVestDistributor } from "./MerkleVestDistributor.sol";
@@ -21,6 +22,8 @@ import { Tokenomics } from "./Tokenomics.sol";
 ///      Duplicate launches for the same (launcher, contestId) still REVERT
 ///      via CREATE2 collision, preserving idempotency for the daily pipeline.
 contract HotshotLaunchpadFactory {
+    using SafeERC20 for IERC20;
+
     IERC20 public immutable quote; // WLD
     address public immutable treasury; // FeeTreasury (Safe-owned)
     INonfungiblePositionManager public immutable npm;
@@ -67,6 +70,10 @@ contract HotshotLaunchpadFactory {
     error NotLauncher();
     error NotTreasury();
     error SplitMismatch();
+    /// @notice setLauncher refuses to rotate the launcher to the zero
+    ///         address — that would brick the launch pipeline (no future
+    ///         launch could be signed). Use a real Privy wallet address.
+    error ZeroLauncher();
 
     constructor(
         IERC20 quote_,
@@ -126,17 +133,23 @@ contract HotshotLaunchpadFactory {
         );
         curve = address(c);
 
-        // 4. exact supply split: 650M → curve, 350M → distributor, 0 left
-        IERC20(token).transfer(curve, curveAmt);
-        IERC20(token).transfer(distributor, rewardsAmt);
+        // 4. exact supply split: 650M → curve, 350M → distributor, 0 left.
+        //    SafeERC20.safeTransfer checks the return value — OZ ERC20
+        //    always returns true so this is belt-and-suspenders against a
+        //    future token swap (Workstream D Solady ERC20 etc.).
+        IERC20(token).safeTransfer(curve, curveAmt);
+        IERC20(token).safeTransfer(distributor, rewardsAmt);
         if (IERC20(token).balanceOf(address(this)) != 0) revert SplitMismatch();
 
         emit Launched(p.contestId, token, curve, distributor, p.metadataURI, p.voteTallyHash);
     }
 
     /// @notice Safe-multisig (treasury) may rotate the automation key.
+    ///         Refuses address(0) to prevent accidentally bricking the
+    ///         launch pipeline.
     function setLauncher(address next) external {
         if (msg.sender != treasury) revert NotTreasury();
+        if (next == address(0)) revert ZeroLauncher();
         launcher = next;
     }
 }
