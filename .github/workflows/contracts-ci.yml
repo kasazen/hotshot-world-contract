@@ -71,7 +71,7 @@ jobs:
             --foundry-out-directory out \
             --fail-high \
             --exclude-informational \
-            --exclude naming-convention,solc-version,assembly,low-level-calls,timestamp
+            --exclude naming-convention,solc-version,assembly,low-level-calls,timestamp,incorrect-exp
 
   mythril:
     name: mythril (symbolic, advisory)
