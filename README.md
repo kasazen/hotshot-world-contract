@@ -115,11 +115,11 @@ Either enforced on-chain or verified by the test suite:
 
 ## Files NOT in this public repo
 
-The off-chain web app lives in a private repo at `kasazen/hotshot-world`.
-Curious about how the off-chain pipeline (lifecycle cron, voting,
-allocation derivation) connects to these contracts? Read the
-production-readiness plan and OPS-RUNBOOK at the project documentation
-site (link in the project README).
+The off-chain web app (Next.js mini-app, lifecycle / score / graduation
+crons, vote-signature verification, allocation derivation, claim API)
+lives in a separate private repo. The on-chain contracts are entirely
+self-contained — auditors and bounty hunters can verify every property
+in `SECURITY.md` against this repo alone.
 
 ## License
 
