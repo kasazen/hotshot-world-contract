@@ -54,7 +54,9 @@ jobs:
           version: nightly
 
       - name: Install Slither
-        run: pip install slither-analyzer==0.10.4
+        # Pin to 0.11.x — older 0.10.x doesn't support `--fail-on`
+        # (only `--fail-pedantic` / `--fail-high` booleans).
+        run: pip install slither-analyzer==0.11.4
 
       - name: Build (Slither needs compiled artifacts)
         run: forge build --build-info --force
