@@ -2,7 +2,31 @@
 pragma solidity 0.8.28;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { INonfungiblePositionManager } from "../../src/interfaces/IUniswapV3.sol";
+import { INonfungiblePositionManager, IUniswapV3Factory } from
+    "../../src/interfaces/IUniswapV3.sol";
+
+/// @notice Mock UniswapV3Factory pairing with MockNPM. Stores per-(token0,
+///         token1, fee) pool addresses so tests can simulate the Virtuals
+///         attack: pre-set a pool address before graduation runs.
+contract MockV3Factory is IUniswapV3Factory {
+    mapping(bytes32 => address) internal _pools;
+
+    function getPool(address tokenA, address tokenB, uint24 fee)
+        external
+        view
+        returns (address pool)
+    {
+        (address t0, address t1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        return _pools[keccak256(abi.encode(t0, t1, fee))];
+    }
+
+    /// @notice Test-only: pre-create a pool entry to simulate the Virtuals
+    ///         attack class.
+    function setPool(address tokenA, address tokenB, uint24 fee, address pool) external {
+        (address t0, address t1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
+        _pools[keccak256(abi.encode(t0, t1, fee))] = pool;
+    }
+}
 
 /// @notice Test double for Uniswap V3 NonfungiblePositionManager. Pulls the
 ///         seeded liquidity (so curve accounting is validated) and hands back
@@ -14,6 +38,15 @@ contract MockNPM is INonfungiblePositionManager {
     mapping(uint256 => address) public ownerOf;
     address public lastPool = address(0x1111111111111111111111111111111111111111);
     uint160 public lastSqrtPrice;
+    MockV3Factory public immutable v3Factory;
+
+    constructor() {
+        v3Factory = new MockV3Factory();
+    }
+
+    function factory() external view returns (address) {
+        return address(v3Factory);
+    }
 
     function createAndInitializePoolIfNecessary(address, address, uint24, uint160 sp)
         external

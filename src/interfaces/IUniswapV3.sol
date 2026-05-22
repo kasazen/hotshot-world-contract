@@ -45,4 +45,17 @@ interface INonfungiblePositionManager {
         returns (uint256 amount0, uint256 amount1);
 
     function safeTransferFrom(address from, address to, uint256 tokenId) external;
+
+    /// @notice Address of the canonical UniswapV3Factory that this NPM deploys
+    ///         pools through. Used by graduation logic to assert no malicious
+    ///         pool was pre-created at the predicted address (Virtuals Apr 2025
+    ///         attack class).
+    function factory() external view returns (address);
+}
+
+interface IUniswapV3Factory {
+    function getPool(address tokenA, address tokenB, uint24 fee)
+        external
+        view
+        returns (address pool);
 }

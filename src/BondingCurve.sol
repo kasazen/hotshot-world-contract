@@ -6,7 +6,7 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Tokenomics } from "./Tokenomics.sol";
-import { INonfungiblePositionManager } from "./interfaces/IUniswapV3.sol";
+import { INonfungiblePositionManager, IUniswapV3Factory } from "./interfaces/IUniswapV3.sol";
 import { LpLocker } from "./LpLocker.sol";
 
 /// @title BondingCurve
@@ -56,6 +56,13 @@ contract BondingCurve is ReentrancyGuard {
     error NotTreasury();
     error SlippageExceeded();
     error ZeroAmount();
+    /// @notice Reverted when a Uniswap V3 pool for (token, quote, POOL_FEE)
+    ///         already exists at graduation time. Mitigates the Virtuals
+    ///         Protocol Apr-2025 attack class: an attacker pre-creates the
+    ///         pool with a malicious sqrtPriceX96, then `createAndInitialize
+    ///         PoolIfNecessary` returns the attacker's pool, and the launch
+    ///         seeds liquidity at the wrong price.
+    error PoolPreExists();
 
     constructor(
         IERC20 token_,
@@ -188,6 +195,15 @@ contract BondingCurve is ReentrancyGuard {
         (address t0, address t1, uint256 a0, uint256 a1) = address(token) < address(quote)
             ? (address(token), address(quote), liqToken, liqQuote)
             : (address(quote), address(token), liqQuote, liqToken);
+
+        // Anti-hijack: assert no pool exists yet for (t0, t1, POOL_FEE) so an
+        // attacker can't pre-create one at the predicted address with a
+        // malicious sqrtPriceX96. `createAndInitializePoolIfNecessary` is a
+        // no-op for existing pools — without this check it would silently
+        // return the attacker-controlled pool and we'd mint LP at the wrong
+        // price. Mitigates Virtuals Protocol Code4rena Apr-2025 attack class.
+        IUniswapV3Factory v3factory = IUniswapV3Factory(npm.factory());
+        if (v3factory.getPool(t0, t1, POOL_FEE) != address(0)) revert PoolPreExists();
 
         uint160 sp = _sqrtPriceX96(a0, a1);
         address pool = npm.createAndInitializePoolIfNecessary(t0, t1, POOL_FEE, sp);

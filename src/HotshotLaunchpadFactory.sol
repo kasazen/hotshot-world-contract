@@ -14,10 +14,12 @@ import { Tokenomics } from "./Tokenomics.sol";
 ///         distributor. Server-signer-only (the low-privilege KMS automation
 ///         key; plan §4.4). Treasury (Safe multisig) can rotate the key.
 ///
-/// @dev CREATE2 with `salt = bytes32(contestId)` makes addresses deterministic
-///      and a duplicate launch for the same contest REVERT (address collision)
-///      rather than double-deploy — the daily pipeline is idempotent: a retry
-///      after a crash either resumes (off-chain state) or no-ops on revert.
+/// @dev CREATE2 salt = `keccak256(abi.encode(launcher, contestId))` —
+///      includes the launcher key in the salt so an attacker who knows the
+///      next contestId can't pre-deploy code at the predicted address and
+///      DoS the launch (Virtuals Protocol Code4rena Apr-2025 attack class).
+///      Duplicate launches for the same (launcher, contestId) still REVERT
+///      via CREATE2 collision, preserving idempotency for the daily pipeline.
 contract HotshotLaunchpadFactory {
     IERC20 public immutable quote; // WLD
     address public immutable treasury; // FeeTreasury (Safe-owned)
@@ -57,7 +59,12 @@ contract HotshotLaunchpadFactory {
         returns (address token, address curve, address distributor)
     {
         if (msg.sender != launcher) revert NotLauncher();
-        bytes32 salt = bytes32(p.contestId);
+        // Salt includes launcher key to prevent external squatting of the
+        // predicted CREATE2 address. The contestId alone is publicly
+        // predictable; mixing in `launcher` raises the bar to "must also
+        // know/control the current launcher key" which is itself rotated by
+        // treasury Safe.
+        bytes32 salt = keccak256(abi.encode(launcher, p.contestId));
 
         uint256 unit = 10 ** Tokenomics.TOKEN_DECIMALS;
         uint256 curveAmt = Tokenomics.CURVE_ALLOCATION * unit;
