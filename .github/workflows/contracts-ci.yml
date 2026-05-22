@@ -60,14 +60,18 @@ jobs:
         run: forge build --build-info --force
 
       - name: Run Slither
-        # --fail-high blocks PRs on HIGH severity findings.
-        # --exclude noise = naming/style/timestamp/info — none security-load-bearing.
+        # --fail-on high → only HIGH-severity findings block the build.
+        # --fail-high alone is ambiguous in some Slither versions
+        # (default is --fail-pedantic = fail on any finding). The
+        # explicit --fail-on form is forward/back-compatible.
+        # --exclude noise = naming/style/timestamp/info — none
+        # security-load-bearing.
         run: |
           slither . \
             --foundry-out-directory out \
+            --fail-on high \
             --exclude-informational \
-            --exclude naming-convention,solc-version,assembly,low-level-calls,timestamp \
-            --fail-high
+            --exclude naming-convention,solc-version,assembly,low-level-calls,timestamp
 
   mythril:
     name: mythril (symbolic, advisory)
