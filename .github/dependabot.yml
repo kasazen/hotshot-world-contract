@@ -1,0 +1,20 @@
+# Dependabot — security + version updates for the public contracts repo.
+# Only ecosystem in scope here is GitHub Actions (the CI workflow);
+# Solidity deps are git submodules (forge-std, openzeppelin-contracts,
+# v3-core, v3-periphery) and Dependabot doesn't track submodule
+# advisories. Submodule updates happen via `forge update` in the manual
+# pre-mainnet hardening pass.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

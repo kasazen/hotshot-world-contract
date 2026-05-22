@@ -1,0 +1,99 @@
+name: contracts-ci
+
+# Public-repo edition of contracts-ci. Runs on every push to main and
+# every PR. Three jobs:
+#   - forge-test: unit + fuzz + invariant + AntiHijack regression
+#     (skips the mainnet fork test by default to avoid public-RPC rate
+#     limits; the fork test is run manually pre-deploy)
+#   - slither: static analysis; fails on HIGH severity findings
+#   - mythril: symbolic analysis on the highest-stakes contracts
+#     (LpLocker, MerkleVestDistributor); non-blocking (continue-on-
+#     error) since false-positive rate is high on curve math
+#
+# Halmos symbolic-execution pass (LpLocker irreversibility) is
+# documented as a pre-mainnet manual gate in the project's OPS-RUNBOOK
+# — too slow + arch-finicky to gate every PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  forge-test:
+    name: forge test (no-fork)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Test (skip fork — run manually pre-deploy)
+        run: forge test --no-match-path "test/fork/**" -vvv
+
+  slither:
+    name: slither (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Install Slither
+        run: pip install slither-analyzer==0.10.4
+
+      - name: Build (Slither needs compiled artifacts)
+        run: forge build --build-info --force
+
+      - name: Run Slither
+        # --fail-high blocks PRs on HIGH severity findings.
+        # --exclude noise = naming/style/timestamp/info — none security-load-bearing.
+        run: |
+          slither . \
+            --foundry-out-directory out \
+            --exclude-informational \
+            --exclude naming-convention,solc-version,assembly,low-level-calls,timestamp \
+            --fail-high
+
+  mythril:
+    name: mythril (symbolic, advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Install Mythril
+        run: pip install mythril==0.24.8
+
+      - name: Compile
+        run: forge build
+
+      - name: Analyze high-stakes contracts
+        # Mythril is slow on curve math + high false-positive rate
+        # there; limit to the contracts where its symbolic engine
+        # adds the most value (LpLocker irreversibility, distributor
+        # flow). `|| true` keeps the job advisory.
+        run: |
+          myth analyze src/LpLocker.sol --solv 0.8.28 --execution-timeout 180 || true
+          myth analyze src/MerkleVestDistributor.sol --solv 0.8.28 --execution-timeout 300 || true
