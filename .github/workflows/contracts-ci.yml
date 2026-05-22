@@ -62,16 +62,18 @@ jobs:
         run: forge build --build-info --force
 
       - name: Run Slither
-        # --fail-on high → only HIGH-severity findings block the build.
-        # --fail-high alone is ambiguous in some Slither versions
-        # (default is --fail-pedantic = fail on any finding). The
-        # explicit --fail-on form is forward/back-compatible.
-        # --exclude noise = naming/style/timestamp/info — none
-        # security-load-bearing.
+        # Block PRs ONLY on HIGH-severity findings.
+        # `--no-fail-pedantic` disables the default "fail on any
+        # finding" behavior; `--fail-high` then enables HIGH-only
+        # gating. Both required — `--fail-high` alone leaves
+        # `--fail-pedantic` enabled.
+        # --exclude noise = naming/style/timestamp/info — none are
+        # security-load-bearing for our vesting/curve math.
         run: |
           slither . \
             --foundry-out-directory out \
-            --fail-on high \
+            --no-fail-pedantic \
+            --fail-high \
             --exclude-informational \
             --exclude naming-convention,solc-version,assembly,low-level-calls,timestamp
 
